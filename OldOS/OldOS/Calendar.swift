@@ -1,114 +1,316 @@
 //
 //  Calendar.swift
-//  OldOS
+//  iOS11Remake
 //
-//  Created by Zane Kleinberg on 6/4/21.
+//  Created by Samuel Bowers on 5/20/2026.
+//  Modified for iOS 11 Remake.
 //
-
-//Messages, Calendar, Youtube, and Mail are all coming soon. I have my own private version of these which I am currently working on, but decided to include the public version here.
 
 import SwiftUI
 
-struct CalendarView: View {
-    @State var current_nav_view: String = "Main"
-    @State var forward_or_backward: Bool = false
-    @State var show_alert:Bool = false
-    @State var increase_brightness: Bool = false
-    @State private var alertTask: Task<Void, Never>?
-    var content_header = [list_row(title: "", content: AnyView(calendar_content_hide()))]
-    var content_mid = [list_row(title: "", content: AnyView(calendar_content_calendar()))]
-    var content_footer = [list_row(title: "", content: AnyView(calendar_content_footer()))]
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                settings_main_list()
-                VStack(spacing:0) {
-                    status_bar_in_app().frame(minHeight: 24, maxHeight:24).zIndex(1)
-                    generic_title_bar(title: "Calendars").frame(height: 60)
-                    ScrollView {
-                        VStack {
-                            Spacer().frame(height: 15)
-                            list_section_content_only(current_nav_view: $current_nav_view, forward_or_backward: $forward_or_backward, content:content_header)
-                            Spacer().frame(height: 10)
-                            HStack {
-                                Text("On My iPhone").foregroundColor(Color(red: 76/255, green: 86/255, blue: 108/255)).font(.custom("Helvetica Neue Bold", fixedSize: 17)).shadow(color: Color.white.opacity(0.9), radius: 0, x: 0.0, y: 0.9).padding([.leading, .trailing], 24)
-                                Spacer()
-                            }
-                            list_section_content_only(current_nav_view: $current_nav_view, forward_or_backward: $forward_or_backward, content:content_mid)
-                            Spacer().frame(height: 10)
-                            HStack {
-                                Text("Other").foregroundColor(Color(red: 76/255, green: 86/255, blue: 108/255)).font(.custom("Helvetica Neue Bold", fixedSize: 17)).shadow(color: Color.white.opacity(0.9), radius: 0, x: 0.0, y: 0.9).padding([.leading, .trailing], 24)
-                                Spacer()
-                            }
-                            list_section_content_only(current_nav_view: $current_nav_view, forward_or_backward: $forward_or_backward, content:content_footer)
-                            Spacer()
-                        }
-                    }
-                }
-            }.overlay(ZStack{
-                if show_alert {
-                    Color.black.opacity(0.55).transition(.opacity)
-                    Rectangle().fill(Color.white.opacity(0.25)).frame(width:geometry.size.width-10, height:geometry.size.width).cornerRadius(geometry.size.width/2).blur(radius: 30).transition(.opacity)
-                    skeumorphic_alert(title:"Calendar is Coming Soon", subtitle: "There's still some major issues with Calendar I'm working to fix, but I didn't want you to miss out on OldOS. Check back soon.", dismiss_action: {
-                        increase_brightness = true
-                        withAnimation(.linear(duration:0.25)){show_alert.toggle()}
-                        
-                    }).brightness(increase_brightness == true ? 0.5 : 0).clipped().transition(.asymmetric(insertion: .scale, removal: .opacity))
-                    //Don't ask me why, but it likes to fade to gray, we set the brightness to 0.5 when removing to restore it to a neutral color.
-                }
-            }).compositingGroup().clipped()
-        }.onAppear() {
-            UIScrollView.appearance().bounces = true
-            alertTask?.cancel()
-            alertTask = Task<Void, Never> { @MainActor in
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                if Task.isCancelled { return }
+// MARK: - Data Models
+struct CalendarEvent: Identifiable {
+    let id = UUID()
+    var title: String
+    var location: String
+    var startDate: Date
+    var endDate: Date
+    var notes: String?
+}
 
-                increase_brightness = false
-                withAnimation(.spring(response: 0.3,
-                                       dampingFraction: 0.55,
-                                       blendDuration: 0.25)) {
-                    show_alert.toggle()
+struct CalendarView: View {
+    @State private var selectedDate = Date()
+    @State private var showAddEventSheet = false
+    @State private var events: [CalendarEvent] = [
+        CalendarEvent(
+            title: "WWDC 17 Keynote",
+            location: "McEnery Convention Center",
+            startDate: Calendar.current.date(bySettingHour: 10, minute: 0, second: 0, of: Date()) ?? Date(),
+            endDate: Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date()) ?? Date(),
+            notes: "Introducing iOS 11, macOS High Sierra, and watchOS 4!"
+        ),
+        CalendarEvent(
+            title: "Lunch with Zane",
+            location: "Apple Park Visitor Center",
+            startDate: Calendar.current.date(bySettingHour: 13, minute: 0, second: 0, of: Date()) ?? Date(),
+            endDate: Calendar.current.date(bySettingHour: 14, minute: 0, second: 0, of: Date()) ?? Date()
+        )
+    ]
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // System status bar spacer
+            status_bar_in_app()
+                .frame(minHeight: 24, maxHeight: 24)
+                .zIndex(2)
+            
+            // iOS 11 Calendar Header
+            iOS11CalendarHeader(selectedDate: $selectedDate, showAddEventSheet: $showAddEventSheet)
+                .background(Color(.systemBackground))
+            
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 20) {
+                    // Day Selector Grid
+                    iOS11MonthGridView(selectedDate: $selectedDate)
+                        .padding(.top, 10)
+                    
+                    Divider()
+                        .padding(.horizontal, 20)
+                    
+                    // Events for the selected Day
+                    iOS11AgendaListView(selectedDate: selectedDate, events: $events)
+                }
+                .padding(.bottom, 30)
+            }
+        }
+        .background(Color(.systemBackground))
+        .edgesIgnoringSafeArea(.all)
+        .sheet(isPresented: $showAddEventSheet) {
+            AddEventSheet(events: $events, selectedDate: selectedDate)
+        }
+    }
+}
+
+// MARK: - iOS 11 Header
+struct iOS11CalendarHeader: View {
+    @Binding var selectedDate: Date
+    @Binding var showAddEventSheet: Bool
+    
+    private var monthYearString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: selectedDate)
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                // Large left-aligned Month & Year
+                Text(monthYearString)
+                    .font(.system(size: 34, weight: .bold, design: .default))
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                // Red Accent "+" button characteristic of iOS 11 Calendar
+                Button(action: { showAddEventSheet = true }) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundColor(.red)
                 }
             }
-        }.onDisappear() {
-            UIScrollView.appearance().bounces = false
-            alertTask?.cancel()
-            alertTask = nil
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+            
+            Divider()
         }
     }
 }
 
-struct calendar_content_hide: View {
+// MARK: - iOS 11 Style Month Grid View
+struct iOS11MonthGridView: View {
+    @Binding var selectedDate: Date
+    private let calendar = Calendar.current
+    private let daysOfWeek = ["S", "M", "T", "W", "T", "F", "S"]
+    
+    private var daysInMonth: [Date] {
+        guard let monthRange = calendar.range(of: .day, in: .month, for: selectedDate),
+              let firstOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: selectedDate))
+        else { return [] }
+        
+        let firstWeekdayOffset = calendar.component(.weekday, from: firstOfMonth) - 1
+        var days: [Date] = []
+        
+        // Pad previous month's days
+        for i in (0..<firstWeekdayOffset).reversed() {
+            if let date = calendar.date(byAdding: .day, value: -i - 1, to: firstOfMonth) {
+                days.append(date)
+            }
+        }
+        
+        // Add current month's days
+        for day in 0..<monthRange.count {
+            if let date = calendar.date(byAdding: .day, value: day, to: firstOfMonth) {
+                days.append(date)
+            }
+        }
+        
+        return days
+    }
+    
     var body: some View {
-        HStack {
-           Spacer()
-            Text("Hide All Calendars").font(.custom("Helvetica Neue Bold", fixedSize: 18)).foregroundColor(.black)
-            Spacer()
+        VStack(spacing: 12) {
+            // Days of the week headers (S M T W T F S)
+            HStack {
+                ForEach(daysOfWeek, id: \.self) { day in
+                    Text(day)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.horizontal, 10)
+            
+            // 7-Column Grid
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
+            
+            LazyVGrid(columns: columns, spacing: 10) {
+                ForEach(daysInMonth, id: \.self) { date in
+                    let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
+                    let isToday = calendar.isDateInToday(date)
+                    let isCurrentMonth = calendar.isDate(date, equalTo: selectedDate, toGranularity: .month)
+                    
+                    Button(action: { selectedDate = date }) {
+                        Text("\(calendar.component(.day, from: date))")
+                            .font(.system(size: 18, weight: isSelected ? .bold : .regular))
+                            .foregroundColor(isSelected ? .white : (isToday ? .red : (isCurrentMonth ? .primary : .secondary.opacity(0.5))))
+                            .frame(width: 38, height: 38)
+                            .background(
+                                Circle()
+                                    .fill(isSelected ? Color.red : Color.clear)
+                            )
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+            .padding(.horizontal, 10)
         }
     }
 }
 
-
-struct calendar_content_calendar: View {
+// MARK: - iOS 11 Style Agenda View
+struct iOS11AgendaListView: View {
+    let selectedDate: Date
+    @Binding var events: [CalendarEvent]
+    
+    private var filteredEvents: [CalendarEvent] {
+        events.filter { Calendar.current.isDate($0.startDate, inSameDayAs: selectedDate) }
+    }
+    
     var body: some View {
-        HStack {
-            Circle().fill(Color(red: 184/255, green: 154/255, blue: 190/255)).strokeCircle(Color(red: 141/255, green: 98/255, blue: 149/255), lineWidth: 0.75).frame(width: 15, height: 15).padding(.leading, 12)
-            Text("Calendar").font(.custom("Helvetica Neue Bold", fixedSize: 18)).foregroundColor(.black)
-            Spacer()
-            Image("UIPreferencesBlueCheck").padding(.trailing, 12)
+        VStack(alignment: .leading, spacing: 15) {
+            Text("Agenda")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(.primary)
+                .padding(.horizontal, 20)
+            
+            if filteredEvents.isEmpty {
+                VStack(spacing: 8) {
+                    Text("No Events Today")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+            } else {
+                VStack(spacing: 12) {
+                    ForEach(filteredEvents) { event in
+                        HStack(spacing: 15) {
+                            // Red calendar category stripe
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color.red)
+                                .frame(width: 4, height: 45)
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(event.title)
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(.primary)
+                                if !event.location.isEmpty {
+                                    Text(event.location)
+                                        .font(.system(size: 13))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            
+                            Spacer()
+                            
+                            VStack(alignment: .trailing, spacing: 4) {
+                                Text(formatTime(event.startDate))
+                                    .font(.system(size: 14, weight: .medium))
+                                Text(formatTime(event.endDate))
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        
+                        Divider()
+                            .padding(.leading, 39)
+                    }
+                }
+            }
         }
+    }
+    
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 }
 
-struct calendar_content_footer: View {
+// MARK: - Interactive Event Creation Sheet
+struct AddEventSheet: View {
+    @Environment(\.dismiss) var dismiss
+    @Binding var events: [CalendarEvent]
+    var selectedDate: Date
+    
+    @State private var title = ""
+    @State private var location = ""
+    @State private var allDay = false
+    @State private var startDate = Date()
+    @State private var endDate = Date()
+    @State private var notes = ""
+    
+    init(events: Binding<[CalendarEvent]>, selectedDate: Date) {
+        self._events = events
+        self.selectedDate = selectedDate
+        self._startDate = State(initialValue: selectedDate)
+        self._endDate = State(initialValue: selectedDate.addingTimeInterval(3600))
+    }
+    
     var body: some View {
-        HStack {
-            Image("birthday").padding(.leading, 12)
-            Text("Birthdays").font(.custom("Helvetica Neue Bold", fixedSize: 18)).foregroundColor(.black)
-            Spacer()
-            Image("UIPreferencesBlueCheck").padding(.trailing, 12)
+        NavigationView {
+            Form {
+                Section {
+                    TextField("Title", text: $title)
+                    TextField("Location", text: $location)
+                }
+                
+                Section {
+                    Toggle("All-day", isOn: $allDay)
+                    DatePicker("Starts", selection: $startDate, displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
+                    DatePicker("Ends", selection: $endDate, displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
+                }
+                
+                Section {
+                    TextField("Notes", text: $notes)
+                }
+            }
+            .navigationTitle("New Event")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundColor(.red)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Add") {
+                        let newEvent = CalendarEvent(
+                            title: title.isEmpty ? "New Event" : title,
+                            location: location,
+                            startDate: startDate,
+                            endDate: endDate,
+                            notes: notes.isEmpty ? nil : notes
+                        )
+                        events.append(newEvent)
+                        dismiss()
+                    }
+                    .foregroundColor(.red)
+                    .font(.system(size: 17, weight: .bold))
+                }
+            }
         }
     }
 }
-
